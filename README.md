@@ -13,6 +13,10 @@ Dataquery AI sits on top of a business database (revenue, subscriptions, product
 
 Behind the scenes, it translates each question into a safe, read-only SQL query, runs it against the live database, and responds with a concise, human-readable answer — formatted in local currency, with the relevant table/time period cited for clarity.
 
+## Architecture
+
+![Dataquery AI Architecture](architecture.png)
+
 ## How it works
 
 - **LLM-powered query generation** — a language model (via Groq) interprets the question and writes the corresponding SQL, guided by a detailed system prompt covering table structure, business terminology, and date-handling conventions.
