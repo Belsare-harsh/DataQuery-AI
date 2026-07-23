@@ -4,7 +4,7 @@ import requests
 import streamlit as st
 
 # Production webhook URL (via ngrok tunnel to local n8n)
-WEBHOOK_URL = "https://apochromatic-sigrid-nondistractive.ngrok-free.dev/webhook/dashboard-chat"
+WEBHOOK_URL = "YOUR PRODUCTION WEHBOOK URL"
 
 BLUE = "#2563EB"
 BORDER = "#EAECF0"
