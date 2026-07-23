@@ -7,38 +7,10 @@ Embedded directly into the Streamlit Executive Dashboard as a floating chat popu
 ---
 
 ## Architecture
-
-```
-Webhook ──▶ schema_cache ──▶ If (cache valid?)
-                              ├─ true ─────────────────────────────────────┐
-                              └─ false ─▶ Execute a SQL query1 ─▶ store_cache ┘
-                                                                              │
-                                                                              ▼
-                                                                          CodeBase
-                                                                              │
-                                                                              ▼
-                                                                    AI Agent (SQL generation)
-                                                                              │
-                                                                              ▼
-                                                                 AI Agent1 (SQL reviewer)
-                                                                              │
-                                                                              ▼
-                                                                  Execute a SQL query
-                                                                              │
-                                                                              ▼
-                                                                          Aggregate
-                                                                              │
-                                                                              ▼
-                                                                       Refine Output
-                                                                     (formatting/Code)
-                                                                              │
-                                                                              ▼
-                                                            AI Agent2 (natural-language composer)
-                                                                              │
-                                                                              ▼
-                                                                    Respond to Webhook
-```
-
+ 
+![chatbot workflow architecture](n8n.png)
+ 
+**Flow:** `Webhook` → `schema_cache` → `If` (cache hit/miss) → *(miss only: `Execute a SQL query1` → `store_cache`)* → `CodeBase` → `AI Agent` (SQL generation) → `AI Agent1` (SQL review) → `Execute a SQL query` → `Aggregate` → `Refine Output` (formatting) → `AI Agent2` (natural-language composer) → `Respond to Webhook`
 ---
 
 ## How it works
