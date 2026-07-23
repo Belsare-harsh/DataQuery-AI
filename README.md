@@ -1,6 +1,6 @@
-# TheFinPedia Executive Dashboard — AI Data Assistant
+# DataQuery AI
 
-An n8n-powered chatbot that lets users ask plain-English questions about TheFinPedia's business and engineering data (revenue, subscriptions, customer support, defect metrics) and get accurate, formatted answers — without writing SQL.
+An n8n-powered chatbot that lets users ask plain-English questions about business and get accurate, formatted answers — without writing SQL.
 
 Embedded directly into the Streamlit Executive Dashboard as a floating chat popup, with multi-session history, markdown tables, and query feedback logging.
 
