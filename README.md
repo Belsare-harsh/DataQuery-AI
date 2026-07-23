@@ -1,38 +1,148 @@
-# Dataquery AI
+# TheFinPedia Executive Dashboard — AI Data Assistant
 
-A conversational SQL analyst assistant that lets you ask business questions in plain English and get real answers straight from your Postgres database — no SQL knowledge required.
+An n8n-powered chatbot that lets users ask plain-English questions about TheFinPedia's business and engineering data (revenue, subscriptions, customer support, defect metrics) and get accurate, formatted answers — without writing SQL.
 
-## What it does
+Embedded directly into the Streamlit Executive Dashboard as a floating chat popup, with multi-session history, markdown tables, and query feedback logging.
 
-Dataquery AI sits on top of a business database (revenue, subscriptions, product usage, customer support, and per-user "360" data) and answers natural language questions like:
-
-- "What's our MRR right now?"
-- "How many open support tickets do we have?"
-- "What's the average revenue per partner over the last 3 months?"
-- "Show me user 1042's activity and open tickets"
-
-Behind the scenes, it translates each question into a safe, read-only SQL query, runs it against the live database, and responds with a concise, human-readable answer — formatted in local currency, with the relevant table/time period cited for clarity.
+---
 
 ## Architecture
 
-![Dataquery AI Architecture](architecture.png)
+```
+Webhook ──▶ schema_cache ──▶ If (cache valid?)
+                              ├─ true ─────────────────────────────────────┐
+                              └─ false ─▶ Execute a SQL query1 ─▶ store_cache ┘
+                                                                              │
+                                                                              ▼
+                                                                          CodeBase
+                                                                              │
+                                                                              ▼
+                                                                    AI Agent (SQL generation)
+                                                                              │
+                                                                              ▼
+                                                                 AI Agent1 (SQL reviewer)
+                                                                              │
+                                                                              ▼
+                                                                  Execute a SQL query
+                                                                              │
+                                                                              ▼
+                                                                          Aggregate
+                                                                              │
+                                                                              ▼
+                                                                       Refine Output
+                                                                     (formatting/Code)
+                                                                              │
+                                                                              ▼
+                                                            AI Agent2 (natural-language composer)
+                                                                              │
+                                                                              ▼
+                                                                    Respond to Webhook
+```
+
+---
 
 ## How it works
 
-- **LLM-powered query generation** — a language model (via Groq) interprets the question and writes the corresponding SQL, guided by a detailed system prompt covering table structure, business terminology, and date-handling conventions.
-- **Read-only by design** — every query is parsed and validated before execution to ensure only `SELECT`/`WITH` statements run; no inserts, updates, deletes, or schema changes are ever possible through the assistant.
-- **Smart table routing** — a core set of frequently used tables (revenue, subscriptions, support, product usage) is always available to the model. For less common data — deep per-user detail, extended engagement metrics — the assistant looks up the exact schema on demand instead of carrying the full database structure in every request, keeping responses fast and efficient.
-- **Ambiguity handling** — vague or underspecified questions (e.g. "top users," "doing well," a month without a year) prompt the assistant to clarify its interpretation before answering, rather than guessing.
-- **Built with Flowise** — the conversational agent, memory, and tool orchestration are assembled visually using Flowise, backed by a lightweight API layer that executes queries safely against the database.
+### 1. Schema caching (`schema_cache` → `If` → `Execute a SQL query1` → `store_cache`)
+Rather than querying `information_schema` on every message, the full database schema is cached in n8n's workflow static data (`$getWorkflowStaticData`) for 1 hour. A separate scheduled workflow keeps the underlying `schema_cache` Supabase table fresh in the background. This means most chat requests skip the Postgres schema lookup entirely.
 
-## Data coverage
+### 2. Schema filtering (`CodeBase`)
+Rather than injecting all ~130 tables into every prompt, this Code node scores each table by keyword relevance to the question and keeps only the top ~15 most relevant tables. It also:
+- Force-includes `invoices`/`users`/`subscriptions` whenever the question has a time dimension (these are the only tables with both a date column and entity foreign keys).
+- Detects referential follow-up questions ("this trend", "that", "it") and merges in the previous question's context, so multi-turn conversations don't lose their subject.
 
-The assistant can answer questions across:
-- **Revenue & Subscriptions** — MRR, ARPU, plan distribution, renewals, upgrades, conversions
-- **Product Usage** — DAU/WAU/MAU, engagement, retention, feature and content usage
-- **Customer Support** — ticket volume, resolution times, SLA breaches, agent workload
-- **User 360** — per-user activity, revenue history, and support history
+### 3. SQL generation (`AI Agent`)
+Generates PostgreSQL from the filtered schema + user question, following a strict rule-based system prompt covering: date-handling patterns, table-selection priority, alias/JOIN validation, subquery scope, string-matching safety (ILIKE over exact match), sort-direction correctness, and financial-year logic.
 
-## Status
+### 4. SQL review (`AI Agent1`)
+A second model pass that checks the generated query against a fixed checklist (JOIN-before-WHERE ordering, subquery alias scope, invented columns, unverified string filters, missing SELECT columns for GROUP BY, sort direction) and returns a corrected query if needed.
 
-Actively being refined — current focus areas include tightening ambiguity handling for time-based questions, expanding schema coverage, and optimizing token usage in longer conversations.
+### 5. Execution (`Execute a SQL query`)
+Runs the reviewed query against Supabase/Postgres.
+
+### 6. Formatting (`Aggregate` → `Refine Output`)
+A Code node that:
+- Humanizes column names (`avg_revenue_last_3_months` → "Average revenue last 3 months")
+- Formats currency with ₹ and Indian-style comma grouping (`12,00,000.00`)
+- Formats percentages, dates (`March 2025`, timezone-corrected for IST), and plain integers appropriately
+- Renders multi-row results as markdown tables
+
+### 7. Natural-language composition (`AI Agent2`)
+Rewrites the formatted data into a conversational answer, in the voice of a friendly data analyst — while never altering the underlying numbers or table structure.
+
+### 8. Response (`Respond to Webhook`)
+Returns the final formatted, natural-language answer as JSON.
+
+---
+
+## Companion workflows
+
+| Workflow | Purpose |
+|---|---|
+| **Schema Refresh** | Scheduled job that queries `information_schema` and upserts the results into the `schema_cache` Supabase table. |
+
+---
+
+## Setup
+
+### Prerequisites
+- n8n instance (self-hosted or cloud), reachable via a stable URL (production: hosted; local dev: ngrok tunnel)
+- Supabase/PostgreSQL database with your schema
+- OpenAI API credentials configured in n8n (one credential, reused across all three AI Agent nodes)
+
+### Required Supabase tables
+```sql
+CREATE TABLE public.schema_cache (
+  id int PRIMARY KEY DEFAULT 1,
+  schema_json jsonb NOT NULL,
+  updated_at timestamptz DEFAULT now(),
+  CONSTRAINT singleton CHECK (id = 1)
+);
+```
+
+### Environment
+- Webhook path: `/webhook/dashboard-chat`
+- Workflow must be **Active** for the production URL to respond.
+
+### Streamlit integration
+The dashboard imports a `chat_widget.py` component that renders the assistant as a popover in the sidebar, with:
+- Multi-session chat history ("New Chat" / history switcher)
+- Markdown table + chart rendering
+
+Set the webhook URL at the top of `chat_widget.py`:
+```python
+WEBHOOK_URL = "https://<your-n8n-domain>/webhook/dashboard-chat"
+```
+
+---
+
+## Extending the fast-path system
+
+For frequently-asked, verified-correct questions, add an entry to the `FAST_PATHS` array in `CodeBase` (or a preceding Code node) to skip SQL generation entirely and return a pre-verified query:
+
+```javascript
+{
+  match: (q) => q.includes('average revenue') && q.includes('partner') && q.includes('3 month'),
+  sql: `SELECT ... /* verified query */ ...`
+}
+```
+
+This guarantees correctness and reduces latency/cost for common questions, while the AI Agent + reviewer pair remains the fallback for anything novel.
+
+---
+
+## Known limitations
+
+- Free-tier ngrok tunnels are not permanent — the URL changes on restart unless a static domain is reserved.
+- The SQL reviewer improves reliability but does not guarantee correctness on every possible question; genuinely new query shapes should be spot-checked before being trusted for reporting.
+- Schema cache TTL is 1 hour by default — schema changes take up to that long to propagate unless the cache is manually invalidated.
+
+---
+
+## Tech stack
+
+- **Orchestration:** n8n
+- **Database:** Supabase (PostgreSQL)
+- **Models:** OpenAI (GPT) — one model instance per step (SQL generation, SQL review, response composition), allowing each to be tuned/swapped independently based on speed vs. accuracy needs per task
+- **Frontend:** Streamlit (Python)
+- **Visualization:** Plotly (chart branch), native markdown tables
