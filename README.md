@@ -8,7 +8,7 @@ Embedded directly into the Streamlit Executive Dashboard as a floating chat popu
 
 ## Architecture
  
-![chatbot workflow architecture](n8n.png)
+![chatbot workflow architecture](Screenshot 2026-08-03 230306.png)
  
 **Flow:** `Webhook` → `schema_cache` → `If` (cache hit/miss) → *(miss only: `Execute a SQL query1` → `store_cache`)* → `CodeBase` → `AI Agent` (SQL generation) → `AI Agent1` (SQL review) → `Execute a SQL query` → `Aggregate` → `Refine Output` (formatting) → `AI Agent2` (natural-language composer) → `Respond to Webhook`
 ---
